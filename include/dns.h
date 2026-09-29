@@ -23,4 +23,7 @@ typedef struct {
 #define QTYPE_MX 15
 #define QCLASS_IN 1
 
+// Assinatura de funções
+int build_dns_query(const char *domain, unsigned char *buffer);
+
 #endif // DNS_H
