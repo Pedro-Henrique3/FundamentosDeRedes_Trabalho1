@@ -6,8 +6,12 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <time.h>
+#include <errno.h>
 
 #include "dns.h"
+
+#define MAX_ATTEMPTS 3 // numero maximo de tentativas
+#define RECV_TIMEOUT_SEC 2 // timeout de recepcao (2s)
 
 // Função auxiliar para formatar o nome de domínio para o padrão do DNS
 // Ex: "unb.br" -> "\x03unb\x02br\x00"
@@ -79,26 +83,32 @@ int main(int argc, char *argv[]) {
     const char *domain = argv[1];
     const char *dns_server = argv[2];
 
-    // TODO: Criar socket UDP
-    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sockfd < 0) {
+    // Comunicacao UDP: criacao do socket
+    int socketfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socketfd < 0) {
         perror("Erro ao criar socket");
         exit(EXIT_FAILURE);
     }
 
-    // Configura tempo limite (timeout) de 2 segundos para o socket
-    struct timeval tv;
-    tv.tv_sec = 2;
-    tv.tv_usec = 0;
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+     // Timeout de recepção (2s)
+     struct timeval tv;
+     tv.tv_sec  = RECV_TIMEOUT_SEC;
+     tv.tv_usec = 0;
+     if (setsockopt(socketfd, SOL_SOCKET, SO_RCVTIMEO,
+                    (const char*)&tv, sizeof(tv)) < 0) {
+         perror("Erro ao configurar SO_RCVTIMEO");
+         close(socketfd);
+         exit(EXIT_FAILURE);
+     }
 
-    // TODO: Configurar endereço do servidor (struct sockaddr_in)
-    struct sockaddr_in dest;
+    // Configuracao do endereco do servidor (struct socketaddr_in)
+    struct socketaddr_in dest;
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
-    dest.sin_port = htons(DNS_PORT);
+    dest.sin_port   = htons(DNS_PORT);
     if (inet_pton(AF_INET, dns_server, &dest.sin_addr) <= 0) {
-        perror("IP do servidor invalido");
+        fprintf(stderr, "IP do servidor invalido: %s\n", dns_server);
+        close(socketfd);
         exit(EXIT_FAILURE);
     }
 
@@ -106,12 +116,52 @@ int main(int argc, char *argv[]) {
     unsigned char buffer[65536];
     int query_len = build_dns_query(domain, buffer);
 
-    // TODO: Loop para enviar a requisição e aguardar resposta (até 3 tentativas)
+    // Loop para enviar a requisicao e aguardar resposta (até 3 tentativas)
+    unsigned char resp_buf[65536];
+    struct socketaddr_in from;
+    socklen_t from_len;
+    ssize_t resp_len = -1;
+
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        ssize_t sent = sendto(socketfd, query_buf, query_len, 0,
+                              (struct socketaddr *)&dest, sizeof(dest));
+        if (sent < 0) {
+            perror("Erro no sendto");
+            continue;           // tenta de novo (se ainda houver tentativa)
+        }
+
+        from_len = sizeof(from);
+        resp_len = recvfrom(socketfd, resp_buf, sizeof(resp_buf), 0,
+                            (struct socketaddr *)&from, &from_len);
+
+        if (resp_len > 0) {
+            break;              // resposta recebida: sai do loop
+        }
+
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            fprintf(stderr,
+                    "Tentativa %d/%d: timeout apos %d segundos.\n",
+                    attempt, MAX_ATTEMPTS, RECV_TIMEOUT_SEC);
+        } else {
+            perror("Erro no recvfrom");
+        }
+    }
+
+    // Trata falha total (3 timeouts/erros)
+    if (resp_len <= 0) {
+        printf("Nao foi possível coletar entrada MX para %s\n", domain);
+        close(socketfd);
+        return EXIT_FAILURE;
+    }
+
+    // A partir daqui: interpretar o payload DNS
+    printf("Resposta recebida: %zd bytes de %s\n",
+           resp_len, inet_ntoa(from.sin_addr));
     
     // TODO: Receber a resposta e interpretar os bytes
     
     // TODO: Imprimir o resultado no formato esperado
-    
-    close(sockfd);
+
+    close(socketfd);
     return 0;
 }
