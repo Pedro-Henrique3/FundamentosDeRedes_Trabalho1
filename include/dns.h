@@ -25,5 +25,7 @@ typedef struct {
 
 // Assinatura de funções
 int build_dns_query(const char *domain, unsigned char *buffer);
+int read_dns_name(const unsigned char *msg, int msg_len, int offset, char *out, int out_size);
+int parse_dns_response(const unsigned char *response, int response_len, const char *domain);
 
 #endif // DNS_H
