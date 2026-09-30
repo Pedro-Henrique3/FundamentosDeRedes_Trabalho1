@@ -12,7 +12,7 @@
 
 #define MAX_ATTEMPTS 3 // numero maximo de tentativas
 #define RECV_TIMEOUT_SEC 2 // timeout de recepcao (2s)
-#define DEBUG 1
+#define DEBUG 0
 
 // Função auxiliar para formatar o nome de domínio para o padrão do DNS
 // Ex: "unb.br" -> "\x03unb\x02br\x00"
@@ -474,13 +474,19 @@ int main(int argc, char *argv[]) {
 
     // A partir daqui: interpretar o payload DNS
     #if DEBUG
-    printf("Resposta recebida: %zd bytes de %s\n",
-           resp_len, inet_ntoa(from.sin_addr));
+    fprintf(stderr,
+            "[DEBUG] Resposta recebida: %zd bytes de %s\n",
+            resp_len,
+            inet_ntoa(from.sin_addr));
     #endif
     
     // Recebe a resposta, interpreta os bytes e imprime o resultado no formato esperado
-    parse_dns_response(resp_buf, resp_len, domain);
+    int parse_result = parse_dns_response(resp_buf, resp_len, domain);
 
     close(socketfd);
+
+    if (parse_result < 0) {
+        return EXIT_FAILURE;
+    }
     return EXIT_SUCCESS;
 }
