@@ -13,28 +13,30 @@
 #define MAX_ATTEMPTS 3 // numero maximo de tentativas
 #define RECV_TIMEOUT_SEC 2 // timeout de recepcao (2s)
 
-// Função auxiliar para formatar o nome de domínio para o padrão do DNS
+// Função auxiliar para formatar o nome de domínio para o padrão do DNS (QNAME)
 // Ex: "unb.br" -> "\x03unb\x02br\x00"
-void format_dns_name(unsigned char *dns, unsigned char *host) {
-    int lock = 0 , i;
-    strcat((char*)host,".");
-    
-    for(i = 0 ; i < strlen((char*)host) ; i++) {
-        if(host[i] == '.') {
-            *dns++ = i - lock;
-            for(; lock < i; lock++) {
-                *dns++ = host[lock];
+void format_dns_name(unsigned char *dns, const unsigned char *host) {
+    int lock = 0, i;
+    int host_len = strlen((const char*)host);
+
+    // Itera sobre o nome de domínio
+    for (i = 0; i <= host_len; i++) {
+        // Se encontrar um ponto ou o final da string
+        if (host[i] == '.' || host[i] == '\0') {
+            *dns++ = i - lock; // Preenche o byte de tamanho
+            for (; lock < i; lock++) {
+                *dns++ = host[lock]; // Copia os caracteres
             }
-            lock++;
+            lock++; // Avança o lock pulando o ponto
         }
     }
-    *dns++ = '\0';
+    *dns++ = '\0'; // Finaliza o QNAME com 0
 }
 
 // Função responsável por montar o payload UDP da consulta DNS
 int build_dns_query(const char *domain, unsigned char *buffer) {
     dns_header_t *dns = (dns_header_t *)buffer;
-    
+
     // Header (12 bytes)
     dns->id = htons((uint16_t)rand()); // ID aleatório
     dns->flags = htons(0x0100);        // Recursão desejada (0x0100)
@@ -42,32 +44,32 @@ int build_dns_query(const char *domain, unsigned char *buffer) {
     dns->ancount = htons(0x0000);
     dns->nscount = htons(0x0000);
     dns->arcount = htons(0x0000);
-    
+
     // A seção Question começa logo após o cabeçalho
     unsigned char *qname = &buffer[sizeof(dns_header_t)];
-    
+
     // Cria uma cópia do domínio pois format_dns_name faz alterações na string
     char host[256];
     strncpy(host, domain, sizeof(host) - 1);
     host[sizeof(host) - 1] = '\0';
-    
+
     // Converte o nome de domínio para o formato do DNS
     format_dns_name(qname, (unsigned char*)host);
-    
+
     // Avança o ponteiro para depois do nome (strlen funciona pois não há '\0' no meio)
     int qname_len = strlen((const char*)qname) + 1;
     unsigned char *qinfo = qname + qname_len;
-    
+
     // Define QTYPE (Tipo) = MX (15)
     uint16_t qtype = htons(QTYPE_MX);
     memcpy(qinfo, &qtype, sizeof(qtype));
     qinfo += sizeof(qtype);
-    
+
     // Define QCLASS (Classe) = IN (1)
     uint16_t qclass = htons(QCLASS_IN);
     memcpy(qinfo, &qclass, sizeof(qclass));
     qinfo += sizeof(qclass);
-    
+
     // Retorna o tamanho total do payload gerado
     return (qinfo - buffer);
 }
@@ -102,7 +104,7 @@ int main(int argc, char *argv[]) {
      }
 
     // Configuracao do endereco do servidor (struct socketaddr_in)
-    struct socketaddr_in dest;
+    struct sockaddr_in dest;
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
     dest.sin_port   = htons(DNS_PORT);
@@ -118,13 +120,13 @@ int main(int argc, char *argv[]) {
 
     // Loop para enviar a requisicao e aguardar resposta (até 3 tentativas)
     unsigned char resp_buf[65536];
-    struct socketaddr_in from;
+    struct sockaddr_in from;
     socklen_t from_len;
     ssize_t resp_len = -1;
 
     for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        ssize_t sent = sendto(socketfd, query_buf, query_len, 0,
-                              (struct socketaddr *)&dest, sizeof(dest));
+        ssize_t sent = sendto(socketfd, buffer, query_len, 0,
+                              (struct sockaddr *)&dest, sizeof(dest));
         if (sent < 0) {
             perror("Erro no sendto");
             continue;           // tenta de novo (se ainda houver tentativa)
@@ -132,7 +134,7 @@ int main(int argc, char *argv[]) {
 
         from_len = sizeof(from);
         resp_len = recvfrom(socketfd, resp_buf, sizeof(resp_buf), 0,
-                            (struct socketaddr *)&from, &from_len);
+                            (struct sockaddr *)&from, &from_len);
 
         if (resp_len > 0) {
             break;              // resposta recebida: sai do loop
@@ -157,10 +159,6 @@ int main(int argc, char *argv[]) {
     // A partir daqui: interpretar o payload DNS
     printf("Resposta recebida: %zd bytes de %s\n",
            resp_len, inet_ntoa(from.sin_addr));
-    
-    // TODO: Receber a resposta e interpretar os bytes
-    
-    // TODO: Imprimir o resultado no formato esperado
 
     close(socketfd);
     return 0;
