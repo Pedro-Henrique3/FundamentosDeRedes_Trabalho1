@@ -5,8 +5,8 @@
 
 ## 1. Integrantes
 - Davi Camilo Menezes (231011220)
-- Euller Julio da Silva (231012094)
-- Giovani de Oliveira Teodoro (241032500)
+- Euller Júlio da Silva (231026714)
+- Giovani de Oliveira Teodoro Coelho (241032500)
 - Pedro Henrique Freire Rodrigues (231026545)
 
 ## 2. Ambiente de Desenvolvimento
