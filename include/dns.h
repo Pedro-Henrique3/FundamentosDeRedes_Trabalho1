@@ -18,6 +18,12 @@ typedef struct {
     uint16_t arcount;  // Adicional (0x0000)
 } __attribute__((packed)) dns_header_t;
 
+// Estrutura para os campos fixos da Question (após o QNAME)
+typedef struct {
+    uint16_t qtype;
+    uint16_t qclass;
+} __attribute__((packed)) dns_question_t;
+
 // Constantes DNS
 #define DNS_PORT 53
 #define QTYPE_MX 15

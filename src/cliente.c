@@ -14,28 +14,30 @@
 #define RECV_TIMEOUT_SEC 2 // timeout de recepcao (2s)
 #define DEBUG 0
 
-// Função auxiliar para formatar o nome de domínio para o padrão do DNS
+// Função auxiliar para formatar o nome de domínio para o padrão do DNS (QNAME)
 // Ex: "unb.br" -> "\x03unb\x02br\x00"
-void format_dns_name(unsigned char *dns, unsigned char *host) {
-    int lock = 0 , i;
-    strcat((char*)host,".");
-    
-    for(i = 0 ; i < strlen((char*)host) ; i++) {
-        if(host[i] == '.') {
-            *dns++ = i - lock;
-            for(; lock < i; lock++) {
-                *dns++ = host[lock];
+void format_dns_name(unsigned char *dns, const unsigned char *host) {
+    int lock = 0, i;
+    int host_len = strlen((const char*)host);
+
+    // Itera sobre o nome de domínio
+    for (i = 0; i <= host_len; i++) {
+        // Se encontrar um ponto ou o final da string
+        if (host[i] == '.' || host[i] == '\0') {
+            *dns++ = i - lock; // Preenche o byte de tamanho
+            for (; lock < i; lock++) {
+                *dns++ = host[lock]; // Copia os caracteres
             }
-            lock++;
+            lock++; // Avança o lock pulando o ponto
         }
     }
-    *dns++ = '\0';
+    *dns++ = '\0'; // Finaliza o QNAME com 0
 }
 
 // Função responsável por montar o payload UDP da consulta DNS
 int build_dns_query(const char *domain, unsigned char *buffer) {
     dns_header_t *dns = (dns_header_t *)buffer;
-    
+
     // Header (12 bytes)
     dns->id = htons((uint16_t)rand()); // ID aleatório
     dns->flags = htons(0x0100);        // Recursão desejada (0x0100)
@@ -43,32 +45,32 @@ int build_dns_query(const char *domain, unsigned char *buffer) {
     dns->ancount = htons(0x0000);
     dns->nscount = htons(0x0000);
     dns->arcount = htons(0x0000);
-    
+
     // A seção Question começa logo após o cabeçalho
     unsigned char *qname = &buffer[sizeof(dns_header_t)];
-    
+
     // Cria uma cópia do domínio pois format_dns_name faz alterações na string
     char host[256];
     strncpy(host, domain, sizeof(host) - 1);
     host[sizeof(host) - 1] = '\0';
-    
+
     // Converte o nome de domínio para o formato do DNS
     format_dns_name(qname, (unsigned char*)host);
-    
+
     // Avança o ponteiro para depois do nome (strlen funciona pois não há '\0' no meio)
     int qname_len = strlen((const char*)qname) + 1;
     unsigned char *qinfo = qname + qname_len;
-    
+
     // Define QTYPE (Tipo) = MX (15)
     uint16_t qtype = htons(QTYPE_MX);
     memcpy(qinfo, &qtype, sizeof(qtype));
     qinfo += sizeof(qtype);
-    
+
     // Define QCLASS (Classe) = IN (1)
     uint16_t qclass = htons(QCLASS_IN);
     memcpy(qinfo, &qclass, sizeof(qclass));
     qinfo += sizeof(qclass);
-    
+
     // Retorna o tamanho total do payload gerado
     return (qinfo - buffer);
 }
